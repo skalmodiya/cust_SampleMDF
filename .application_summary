@@ -1,0 +1,5 @@
+{
+  "ProjectOverviewURL": "https://73b14388trial.launchpad.cfapps.us10.hana.ondemand.com/lcapcust_SampleMDF.cust_SampleMDFLaunchpad-1.0.0",
+  "DeployedUTCTime": "2023-02-16T20:34:23.521Z",
+  "ApplicationLogURL": "https://logs.cf.us10-001.hana.ondemand.com/app/dashboards#/view/Overview?_g=(filters:!((query:(match_phrase:(component_name:cust_SampleMDF-srv)))))"
+}

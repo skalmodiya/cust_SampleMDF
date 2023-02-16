@@ -1,0 +1,199 @@
+_schema-version: '3.1'
+ID: cust_SampleMDF
+version: 1.0.0
+description: A simple CAP project.
+parameters:
+  deploy_mode: html5-repo
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - rm -rf build/ui-deployer
+        - mkdir -p build/ui-deployer
+        - rm -rf build/dist
+        - mkdir -p build/dist
+    - builder: custom
+      commands:
+        - npm install --production
+        - >-
+          bash -c "cds -v | grep 'cds-dk' || npm i --production --no-save
+          @sap/cds-dk @sap/mdk-tools"
+        - bash -c "export PATH=$PATH:$(pwd)/node_modules/.bin"
+        - cds build --production
+modules:
+  - name: cust_SampleMDF-custSampleMDF.MyApplication
+    type: html5
+    path: app/cust_SampleMDF.MyApplication
+    build-parameters:
+      builder: custom
+      commands:
+        - rm -rf dist-zip dist
+        - >-
+          npx -p @ui5/cli@2.14.17 ui5 build --dest dist
+          --include-task=generateManifestBundle
+          --include-task=generateCachebusterInfo
+        - mkdir dist-zip
+        - >-
+          bash -c "cd dist && npx bestzip
+          ../dist-zip/custSampleMDFMyApplication.zip *"
+      _artifactName: custSampleMDFMyApplication.zip
+      supported-platforms: []
+      build-result: dist-zip
+  - name: cust_SampleMDF-db-deployer
+    type: hdb
+    path: gen/db
+    parameters:
+      buildpack: nodejs_buildpack
+    build-parameters:
+      builder: npm
+      ignore:
+        - node_modules
+        - package-lock.json
+    requires:
+      - name: cust_SampleMDF-service-uaa
+      - name: cust_SampleMDF-service-db
+  - name: cust_SampleMDF-srv
+    type: nodejs
+    path: gen/srv
+    parameters:
+      memory: 256MB
+    provides:
+      - name: srv-api
+        properties:
+          srv-url: ${default-url}
+    build-parameters:
+      builder: npm
+      ignore:
+        - node_modules
+        - package-lock.json
+    requires:
+      - name: cust_SampleMDF-service-uaa
+      - name: cust_SampleMDF-service-db
+      - name: cust_SampleMDF-service-destination
+      - name: cust_SampleMDF-service-metadata
+      - name: cust_SampleMDF-service-connectivity
+      - name: cust_SampleMDF-service-logs
+  - name: cust_SampleMDF-aux-destinations
+    type: com.sap.application.content
+    parameters:
+      content:
+        subaccount:
+          existing_destinations_policy: update
+          destinations:
+            - Authentication: OAuth2UserTokenExchange
+              Name: cust_SampleMDF-service-uaa
+              ServiceInstanceName: cust_SampleMDF-uaa
+              ServiceKeyName: cust_SampleMDF-uaa-key
+              sap.cloud.service: lcap.cust_SampleMDF
+            - Authentication: OAuth2UserTokenExchange
+              Name: cust_SampleMDF-app-srv
+              TokenServiceInstanceName: cust_SampleMDF-uaa
+              TokenServiceKeyName: cust_SampleMDF-uaa-key
+              URL: ~{srv-api/srv-url}
+              sap.cloud.service: lcap.cust_SampleMDF
+            - Name: cust_SampleMDF-service-html5-apps-repo-host
+              ServiceInstanceName: cust_SampleMDF-html5-apps-repo-host
+              ServiceKeyName: cust_SampleMDF-html5-apps-repo-host-key
+              sap.cloud.service: lcap.cust_SampleMDF
+    build-parameters:
+      no-source: true
+    requires:
+      - name: cust_SampleMDF-service-uaa
+        parameters:
+          service-key:
+            name: cust_SampleMDF-uaa-key
+      - name: srv-api
+      - name: cust_SampleMDF-service-html5-apps-repo-host
+        parameters:
+          service-key:
+            name: cust_SampleMDF-html5-apps-repo-host-key
+      - name: cust_SampleMDF-service-destination
+        parameters:
+          content-target: true
+  - name: cust_SampleMDF-launchpad
+    type: html5
+    path: build/launchpad
+    build-parameters:
+      builder: custom
+      commands:
+        - npm install
+        - >-
+          npx -p @ui5/cli@2.14.17 ui5 build --dest dist
+          --include-task=generateManifestBundle
+          --include-task=generateCachebusterInfo
+        - bash -c "cd dist && npx bestzip ../../../build/dist/launchpad.zip *"
+        - rm -rf dist
+      _artifactName: launchpad.zip
+      supported-platforms: []
+      build-result: ../../build/dist
+  - name: cust_SampleMDF-aux-ui-deployer
+    type: com.sap.application.content
+    path: build/ui-deployer
+    build-parameters:
+      build-result: resources
+      requires:
+        - name: cust_SampleMDF-custSampleMDF.MyApplication
+          artifacts:
+            - custSampleMDFMyApplication.zip
+          target-path: resources
+        - name: cust_SampleMDF-launchpad
+          artifacts:
+            - launchpad.zip
+          target-path: resources
+    requires:
+      - name: cust_SampleMDF-service-html5-apps-repo-host
+        parameters:
+          content-target: true
+resources:
+  - type: org.cloudfoundry.managed-service
+    name: cust_SampleMDF-service-uaa
+    parameters:
+      service: xsuaa
+      service-plan: application
+      service-name: cust_SampleMDF-uaa
+      path: xs-security.json
+      config:
+        xsappname: cust_SampleMDF-${space}
+        role-collections: []
+  - type: org.cloudfoundry.managed-service
+    name: cust_SampleMDF-service-db
+    parameters:
+      service: hana
+      service-plan: hdi-shared
+      service-name: cust_SampleMDF-db
+  - type: org.cloudfoundry.managed-service
+    name: cust_SampleMDF-service-destination
+    parameters:
+      service: destination
+      service-plan: lite
+      service-name: cust_SampleMDF-destination
+      config:
+        HTML5Runtime_enabled: true
+        version: 1.0.0
+  - type: org.cloudfoundry.user-provided-service
+    name: cust_SampleMDF-service-metadata
+    parameters:
+      service: metadata
+      service-plan: standard
+      service-name: cust_SampleMDF-metadata
+      config:
+        default-domain: ${default-domain}
+  - type: org.cloudfoundry.managed-service
+    name: cust_SampleMDF-service-connectivity
+    parameters:
+      service: connectivity
+      service-plan: lite
+      service-name: cust_SampleMDF-connectivity
+  - type: org.cloudfoundry.managed-service
+    name: cust_SampleMDF-service-logs
+    parameters:
+      service: application-logs
+      service-plan: lite
+      service-name: cust_SampleMDF-logs
+  - type: org.cloudfoundry.managed-service
+    name: cust_SampleMDF-service-html5-apps-repo-host
+    parameters:
+      service: html5-apps-repo
+      service-plan: app-host
+      service-name: cust_SampleMDF-html5-apps-repo-host
